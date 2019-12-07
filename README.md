@@ -29,3 +29,6 @@ Put your `Steam API key` inside the `config.json` file and inside this file you 
 
 ## Help
 *If you have any problems, then please open the* [issue](https://github.com/despa1r1337/ReportBot-v2/issues)
+
+# Credits
+@BeepFelix main script
