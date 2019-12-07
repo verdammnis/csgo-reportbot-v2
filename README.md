@@ -5,7 +5,7 @@ Node Report Bot v2
 2) Open `install.bat `  *after loading node modules, the console closes itself*
 3) right click on `config.json`, select edit with notepad ++
 4) put your accounts in the `accounts.txt` file
-5) Open `open database.bat ` select `Add account (s) to database`, select `Import from username:password file`, `enter accounts.txt`
+5) Open `open database.bat ` select `Add account (s) to database`, select `Import from username:password file`, enter `accounts.txt`
 6) Open `Start Report Bot.bat `
 
 # Bot
