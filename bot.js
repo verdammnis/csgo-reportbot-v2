@@ -324,12 +324,10 @@ function handleChunk(chunk, toCommend, serverSteamID, matchID) {
 			}
 
 			if (msg.type === "logging") {
-				console.log("yellow", "[" + msg.username + "] Logging into Steam");
 				return;
 			}
 
 			if (msg.type === "loggedOn") {
-				console.log("yellow", "[" + msg.username + "] Logged onto Steam");
 				return;
 			}
 
