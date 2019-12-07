@@ -178,13 +178,6 @@ console.log = (color, ...args) => {
 					});
 
 					if (!serverToUse) {
-						/*serverToUse = await fetcher.getTargetServerValve(targetAcc).catch((err) => {
-							if (err.message) {
-								console.log("red", err.message);
-							} else {
-								console.error(err);
-							}
-						});*/
 
 						await new Promise(p => setTimeout(p, config.fetcher.tryDelay));
 					}
@@ -259,14 +252,12 @@ console.log = (color, ...args) => {
 
 		console.log("white", "Chunk " + (i + 1) + "/" + chunks.length + " finished with " + result.success.length + " successful " + (config.type.toUpperCase() === "REPORT" ? "report" : "commend") + (result.success.length === 1 ? "" : "s") + " and " + result.error.length + " failed " + (config.type.toUpperCase() === "REPORT" ? "report" : "commend") + (result.error.length === 1 ? "" : "s"));
 
-		// Wait a little bit and relog target if needed
 		if ((i + 1) < chunks.length) {
 			console.log("yellow", "Waiting " + config.betweenChunks + "ms...");
 			await new Promise(r => setTimeout(r, config.betweenChunks));
 		}
 	}
 
-	// We are done here!
 	if (targetAcc instanceof Target) {
 		targetAcc.logOff();
 	}
@@ -310,7 +301,7 @@ function handleChunk(chunk, toCommend, serverSteamID, matchID) {
 						isReport: true,
 
 						chunk: chunk,
-						toReport: toCommend /* Variable is named "toCommend" but its just the account ID so whatever */,
+						toReport: toCommend 
 						serverSteamID: serverSteamID,
 						matchID: matchID
 					});
@@ -329,7 +320,7 @@ function handleChunk(chunk, toCommend, serverSteamID, matchID) {
 			}
 
 			if (msg.type === "loggedOn") {
-				console.log("yellow", "[" + msg.username + "] Logged onto Steam");
+				console.log("blue", "[" + msg.username + "] Logged onto Steam");
 				return;
 			}
 
@@ -338,7 +329,6 @@ function handleChunk(chunk, toCommend, serverSteamID, matchID) {
 
 
 				if (msg.response.response_result === 1) {
-					// Success commend
 					res.success.push(msg.response);
 
 					if (msg.type === "commended") {
@@ -350,7 +340,6 @@ function handleChunk(chunk, toCommend, serverSteamID, matchID) {
 					return;
 				}
 
-				// Unknown response code
 				res.error.push(msg.response);
 
 				console.log("red", "[" + msg.username + "] " + (config.type.toUpperCase() === "REPORT" ? "Reported" : "Commended") + " but got invalid success code " + msg.response.response_result + " (" + (res.error.length + res.success.length) + "/" + chunk.length + ")");
