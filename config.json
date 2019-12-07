@@ -1,0 +1,21 @@
+{
+	
+	"report": {
+		"aimbot": 20,
+		"wallhack": 20,
+		"speedhack": 20,
+		"textabuse": 20,
+		"voiceabuse": 20,
+		"teamharm": 20
+	},
+
+	"type": "REPORT",
+	"method": "SERVER",
+	"target": "https://steamcommunity.com/profiles/xxxxxxxxxxxxxxxxxx/",  
+	"serverID": "[A:1:xxxxxxxxx:xxxxx]",
+	"matchID": "0",
+	"perChunk": 20,
+	"betweenChunks": 300000,
+	"cooldown": 28800000,
+	"steamWebAPIKey": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+}
