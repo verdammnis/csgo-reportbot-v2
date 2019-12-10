@@ -1,0 +1,10 @@
+.vscode
+node_modules
+data
+accounts.json
+config.json
+test*.js
+accounts*.sqlite
+test*.txt
+proxies*
+debug
