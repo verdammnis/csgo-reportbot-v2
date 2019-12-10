@@ -8,6 +8,12 @@
 		"voiceabuse": 20,
 		"teamharm": 20
 	},
+	
+	"proxy": {
+		"enabled": false,
+		"file": "proxies.txt",
+		"switchProxyEveryXaccounts": 20
+	},
 
 	"type": "REPORT",
 	"method": "SERVER",
