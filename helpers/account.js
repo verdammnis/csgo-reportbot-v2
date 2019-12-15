@@ -1,3 +1,4 @@
+const Events = require("events");
 const SteamUser = require("steam-user");
 const SteamTotp = require("steam-totp");
 const SteamID = require("steamid");
@@ -5,8 +6,10 @@ const GameCoordinator = require("./GameCoordinator.js");
 const VDF = require("./VDF.js");
 const Helper = require("./Helper.js");
 
-module.exports = class Account {
+module.exports = class Account extends Events {
 	constructor(isTarget = false, proxy = undefined, debug = false) {
+		super();
+
 		this.steamUser = new SteamUser({
 			autoRelogin: false,
 			enablePicsCache: false,
@@ -16,6 +19,16 @@ module.exports = class Account {
 		this.csgoUser = new GameCoordinator(this.steamUser, debug);
 		this.loginTimeout = null;
 		this.isTarget = isTarget;
+		this.errored = false;
+	}
+
+	_steamErrorHandler(err) {
+		if (this.errored) {
+			return;
+		}
+		this.errored = true;
+
+		this.emit("error", err);
 	}
 
 	/**
@@ -88,6 +101,7 @@ module.exports = class Account {
 
 				await this.steamUser.requestFreeLicense(730);
 
+				this.steamUser.on("error", this._steamErrorHandler);
 				this.steamUser.setPersona(SteamUser.EPersonaState.Online);
 				this.steamUser.gamesPlayed(730);
 
@@ -121,6 +135,10 @@ module.exports = class Account {
 	 * @returns {undefined}
 	 */
 	setGamesPlayed(serverID) {
+		if (this.errored) {
+			return;
+		}
+
 		this.steamUser.gamesPlayed({
 			game_id: 730,
 			steam_id_gs: serverID
@@ -143,6 +161,18 @@ module.exports = class Account {
 
 			// Wait for the ServerID to set
 			await new Promise(p => setTimeout(p, 50));
+
+			if (this.errored) {
+				return;
+			}
+
+			if (typeof matchID === "number") {
+				matchID = String(matchID);
+			}
+
+			if (typeof matchID === "string" && (matchID.toUpperCase() === "AUTO" || matchID.length <= 0 || !/^\d+$/.test(matchID))) {
+				matchID = "0";
+			}
 
 			this.csgoUser.sendMessage(
 				730,
@@ -185,6 +215,10 @@ module.exports = class Account {
 			// Wait for the ServerID to set
 			await new Promise(p => setTimeout(p, 50));
 
+			if (this.errored) {
+				return;
+			}
+
 			this.csgoUser.sendMessage(
 				730,
 				this.csgoUser.Protos.csgo.ECsgoGCMsg.k_EMsgGCCStrike15_v2_ClientReportPlayer,
@@ -214,6 +248,10 @@ module.exports = class Account {
 	 */
 	getTargetServer(accountid) {
 		return new Promise((resolve, reject) => {
+			if (this.errored) {
+				return;
+			}
+
 			this.csgoUser.sendMessage(
 				undefined,
 				7502,
@@ -282,12 +320,12 @@ module.exports = class Account {
 					5000
 				).then((data) => {
 					if (data.errormsg) {
-						reject(new Error("Received join error: " + data.errormsg));
+						reject(new Error("Received join error for community server: " + data.errormsg));
 						return;
 					}
 
 					if (!data.res || !data.res.serverid) {
-						reject(new Error("Failed to get server join data"));
+						reject(new Error("Failed to get community server join data"));
 						return;
 					}
 
@@ -303,6 +341,10 @@ module.exports = class Account {
 
 	getTargetServerValve(accountid) {
 		return new Promise((resolve, reject) => {
+			if (this.errored) {
+				return;
+			}
+
 			this.csgoUser.sendMessage(
 				730,
 				this.csgoUser.Protos.csgo.ECsgoGCMsg.k_EMsgGCCStrike15_v2_ClientRequestWatchInfoFriends2,
@@ -315,10 +357,10 @@ module.exports = class Account {
 				},
 				this.csgoUser.Protos.csgo.ECsgoGCMsg.k_EMsgGCCStrike15_v2_GCToClientSteamdatagramTicket,
 				this.csgoUser.Protos.csgo.CMsgGCToClientSteamDatagramTicket,
-				20000
+				5000
 			).then((info) => {
 				if (!info.serialized_ticket) {
-					reject(new Error("Got no CSGO response data"));
+					reject(new Error("Got no CSGO response data for Valve Server"));
 					return;
 				}
 
@@ -341,6 +383,8 @@ module.exports = class Account {
 	 * Log out from the account
 	 */
 	logOff() {
+		this.steamUser.removeListener("error", this._steamErrorHandler);
+
 		this.steamUser.logOff();
 	}
 }
