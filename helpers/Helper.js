@@ -13,20 +13,34 @@ module.exports = class Helper {
 
 	downloadProtobufs(dir) {
 		return new Promise(async (resolve, reject) => {
+			let deletes = ["Protobufs-master", "protobufs"];
+			await Promise.all(deletes.map(d => {
+				let p = path.join(dir, d);
+				if (fs.existsSync(p)) {
+					return this.deleteRecursive(p);
+				} else {
+					return new Promise(r => r());
+				}
+			}));
+
 			let newProDir = path.join(dir, "Protobufs-master");
-			if (fs.existsSync(newProDir)) {
-				await this.deleteRecursive(newProDir);
-			}
+			let proDir = path.join(dir, "protobufs");
 
 			// Yes I know the ones I download here are technically not the same as the ones in the submodule
 			// but that doesn't really matter, I doubt Valve will do any major changes with the protobufs I use here anyways
-			let r = request("https://github.com/SteamDatabase/Protobufs/archive/master.zip");
-			let pipe = r.pipe(unzipper.Extract({ path: dir }));
-			pipe.on("close", async () => {
-				let proDir = path.join(dir, "protobufs");
-				if (fs.existsSync(proDir)) {
-					await this.deleteRecursive(proDir);
+			request({
+				uri: "https://github.com/SteamDatabase/Protobufs/archive/master.zip",
+				encoding: null
+			}, async (err, res, body) => {
+				if (err) {
+					reject(err);
+					return;
 				}
+
+				let zip = await unzipper.Open.buffer(body);
+				await zip.extract({
+					path: dir
+				});
 
 				fs.rename(newProDir, proDir, (err) => {
 					if (err) {
@@ -37,7 +51,6 @@ module.exports = class Helper {
 					resolve();
 				});
 			});
-			pipe.on("error", reject);
 		});
 	}
 
@@ -94,7 +107,7 @@ module.exports = class Helper {
 
 	GetLatestVersion() {
 		return new Promise(async (resolve, reject) => {
-			let json = await this.GetJSON("https://raw.githubusercontent.com/BeepFelix/csgo-commend-bot/master/package.json");
+			let json = await this.GetJSON("https://raw.githubusercontent.com/BeepIsla/csgo-commend-bot/master/package.json");
 
 			if (!json.version) {
 				reject(json);
@@ -102,18 +115,6 @@ module.exports = class Helper {
 			}
 
 			resolve(json.version);
-		});
-	}
-
-	GetCurrentVersion(appid) {
-		return new Promise(async (resolve, reject) => {
-			let json = await this.GetJSON("https://api.steampowered.com/ISteamApps/UpToDateCheck/v1/?format=json&appid=" + appid + "&version=0");
-			if (!json.response) {
-				reject(json);
-				return;
-			}
-
-			resolve(json.response.required_version);
 		});
 	}
 
@@ -151,74 +152,12 @@ module.exports = class Helper {
 		});
 	}
 
-	GetActiveServer() {
-		return doRequest.call(this, "IGameServersService/GetServerList", "v1", {
-			limit: 1,
-			filter: "\\appid\\730\\noplayers\\1\\"
-		}, [
-			"response",
-			"servers"
-		], Array.isArray);
-	}
-
 	vanityURL(url) {
 		return doRequest.call(this, "ISteamUser/ResolveVanityURL", "v1", {
 			vanityurl: url
 		}, [
 			"response"
 		], null);
-	}
-
-	getServerInfo(id) {
-		return new Promise((resolve, reject) => {
-			doRequest.call(this, "IGameServersService/GetServerList", "v1", {
-				limit: 1,
-				filter: "\\steamid\\" + id
-			}, [
-				"response",
-				"servers"
-			], Array.isArray).then((res) => {
-				if (!res[0]) {
-					reject(new Error("Invalid Server"));
-					return;
-				}
-
-				resolve(res[0]);
-			}).catch((err) => {
-				reject(err);
-			});
-		});
-	}
-
-	parseServerID(id) {
-		return new Promise((resolve, reject) => {
-			let sid = undefined;
-			try {
-				sid = new SteamID(id);
-			} catch (e) { }
-
-			if (sid && sid.isValid() && [3, 4].includes(sid.type) && sid.universe === 1) {
-				resolve(sid.getSteamID64());
-				return;
-			}
-
-			doRequest.call(this, "IGameServersService/GetServerList", "v1", {
-				limit: 1,
-				filter: "\\gameaddr\\" + id
-			}, [
-				"response",
-				"servers"
-			], Array.isArray).then((res) => {
-				if (!res[0].steamid) {
-					reject(new Error("Invalid Server IP"));
-					return;
-				}
-
-				resolve(res[0].steamid);
-			}).catch((err) => {
-				reject(err);
-			});
-		});
 	}
 
 	GetJSON(options) {
@@ -258,13 +197,6 @@ module.exports = class Helper {
 		}
 
 		return tempArray;
-	}
-
-	static intToString(ipInt) {
-		// Copied from https://github.com/DoctorMcKay/node-stdlib/blob/3a65f4116116fb8a0a82239a9cc0db35c44558d9/components/ipv4.js
-		let buf = Buffer.alloc(4);
-		buf.writeUInt32BE(ipInt >>> 0, 0);
-		return Array.prototype.join.call(buf, ".");
 	}
 }
 
