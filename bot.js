@@ -4,10 +4,9 @@ const path = require("path");
 const SteamUser = require("steam-user");
 const fs = require("fs");
 const URL = require("url");
-const Target = require("./helpers/Target.js");
 const Helper = require("./helpers/Helper.js");
-const Account = require("./helpers/account.js");
-const config = require("./config.json");
+const Target = require("./helpers/Target.js");
+let config = null;
 
 process.on("unhandledRejection", console.error);
 process.on("uncaughtException", console.error);
@@ -23,13 +22,8 @@ const colors = {
 	cyan: "\x1b[36m",
 	white: "\x1b[37m"
 };
-const helper = new Helper(config.steamWebAPIKey);
+let helper = null;
 let totalNeeded = 0;
-if (config.type && config.type.toUpperCase() === "REPORT") {
-	totalNeeded = Math.max(config.report.aimbot, config.report.wallhack, config.report.speedhack, config.report.teamharm, config.report.textabuse, config.report.voiceabuse);
-} else {
-	totalNeeded = Math.max(config.commend.friendly, config.commend.teaching, config.commend.leader);
-}
 let proxies = undefined;
 let db = undefined;
 let isNewVersion = false;
@@ -43,8 +37,35 @@ console.log = (color, ...args) => {
 }
 
 (async () => {
-	if (typeof config.type === "undefined") {
-		config.type = "COMMEND";
+	if (!fs.existsSync("./config.json")) {
+		console.log("red", "Failed to find \"config.json\". Did you rename the file to \"config.json.json\"? Make sure to Enable Windows File Extensions");
+		return;
+	}
+
+	try {
+		config = require("./config.json");
+	} catch (err) {
+		let errPosition = err.message.split(": ").pop().trim();
+		let match = errPosition.match(/^Unexpected (?<type>.*) in JSON at position (?<position>.*)$/i);
+		if (!match || isNaN(parseInt(match.groups.position))) {
+			console.error(err);
+		} else {
+			let configRaw = fs.readFileSync("./config.json").toString();
+			let part = configRaw.slice(0, parseInt(match.groups.position));
+			let lines = part.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+
+			console.log("red", "Failed to parse \"config.json\":\nError description: " + errPosition + "\nError on line: " + lines.length + "\nText which caused the error: " + lines.pop());
+			console.log("red", "Please verify your \"config.json\" and take the \"config.json.example\" file for help")
+		}
+		return;
+	}
+
+	helper = new Helper(config.steamWebAPIKey);
+
+	if (config.type && config.type.toUpperCase() === "REPORT") {
+		totalNeeded = Math.max(config.report.aimbot, config.report.wallhack, config.report.speedhack, config.report.teamharm, config.report.abusive);
+	} else {
+		totalNeeded = Math.max(config.commend.friendly, config.commend.teaching, config.commend.leader);
 	}
 
 	if (!["LOGIN", "SERVER"].includes(config.method.toUpperCase())) {
@@ -62,36 +83,39 @@ console.log = (color, ...args) => {
 		return;
 	}
 
-	console.log("white", "Checking for new update...");
-	try {
-		let package = require("./package.json");
+	if (!config.disableUpdateCheck) {
+		console.log("white", "Checking for new update...");
+		try {
+			let package = require("./package.json");
 
-		if (!fs.existsSync("./data/dev")) {
-			if (fs.existsSync("./data/version")) {
-				let version = fs.readFileSync("./data/version").toString();
-				isNewVersion = version !== package.version;
+			if (!fs.existsSync("./data/dev")) {
+				if (fs.existsSync("./data/version")) {
+					let version = fs.readFileSync("./data/version").toString();
+					isNewVersion = version !== package.version;
+				}
+
+				if (!fs.existsSync("./data")) {
+					fs.mkdirSync("./data");
+				}
+				fs.writeFileSync("./data/version", package.version);
 			}
 
-			if (!fs.existsSync("./data")) {
-				fs.mkdirSync("./data");
+			let res = await helper.GetLatestVersion().catch(() => { });
+			if (package.version !== res) {
+				let repoURL = package.repository.url.split(".");
+				repoURL.pop();
+				console.log("red", "A new version is available on Github @ " + repoURL.join("."));
+				console.log("red", "Downloading is optional but recommended. Make sure to check if there are any new values to be added in your old \"config.json\"");
+				await new Promise(p => setTimeout(p, 5000));
+			} else {
+				console.log("green", "Up to date!");
 			}
-			fs.writeFileSync("./data/version", package.version);
+		} catch (err) {
+			console.error(err);
+			console.log("red", "Failed to check for updates");
 		}
-
-		let res = await helper.GetLatestVersion().catch(console.error);
-
-		if (package.version !== res) {
-			let repoURL = package.repository.url.split(".");
-			repoURL.pop();
-			console.log("red", "\nA new version is available on Github @ " + repoURL.join("."));
-			console.log("red", "Downloading is optional but recommended. Make sure to check if there are any new values to be added in your old \"config.json\"");
-			await new Promise(p => setTimeout(p, 5000));
-		} else {
-			console.log("green", "Up to date!");
-		}
-	} catch (err) {
-		console.error(err);
-		console.log("red", "Failed to check for updates");
+	} else {
+		console.log("white", "Update check skipped");
 	}
 
 	console.log("white", "Checking protobufs...");
@@ -157,64 +181,88 @@ console.log = (color, ...args) => {
 		return;
 	}
 
-	let targetAcc = undefined;
-	let serverToUse = undefined;
-	let matchID = config.matchID;
-
+	let sid = undefined;
 	if (config.method.toUpperCase() === "LOGIN") {
-		console.log("white", "Getting an available server");
-		serverToUse = (await helper.GetActiveServer()).shift().steamid;
+		console.log("white", "Logging into target account...");
 
-		console.log("white", "Logging into target account");
-		targetAcc = new Target(config.account.username, config.account.password, config.account.sharedSecret);
-		await targetAcc.login();
-	} else if (config.method.toUpperCase() === "SERVER") {
+		// Its named sid even though its not really a SteamID but who cares
+		sid = new Target();
+		let welcome = await sid.login(config.account.username, config.account.password, config.account.sharedSecret).catch(async (err) => {
+			console.log("red", "Failed to log into Steam using account as target", err);
+			await db.close();
+
+			if (sid instanceof Target) {
+				sid.logOff();
+			}
+
+			// Force exit the process if it doesn't happen automatically within 15 seconds
+			setTimeout(process.exit, 15000, 1).unref();
+		});
+		if (!welcome) {
+			return;
+		}
+	} else {
 		console.log("white", "Parsing target account...");
-		targetAcc = (await helper.parseSteamID(config.target)).accountid;
+		sid = await helper.parseSteamID(config.target).catch(async (err) => {
+			switch (err.message) {
+				case "Failed to parse SteamID": {
+					console.log("red", "Input is not in a valid format");
+					break;
+				}
+				case "Invalid Vanity URL": {
+					console.log("red", "Input is not a valid SteamID or VanityURL");
+					break;
+				}
+				default: {
+					console.error(err);
+				}
+			}
+
+			await db.close();
+
+			// Force exit the process if it doesn't happen automatically within 15 seconds
+			setTimeout(process.exit, 15000, 1).unref();
+		});
+		if (!sid) {
+			return;
+		}
 	}
 
-	let accountsToUse = await db.all("SELECT accounts.username, accounts.password, accounts.sharedSecret FROM accounts LEFT JOIN commended ON commended.username = accounts.username WHERE accounts.username NOT IN (SELECT username FROM commended WHERE commended = " + (typeof targetAcc === "object" ? targetAcc.accountid : targetAcc) + " OR commended.username IS NULL) AND (" + Date.now() + " - accounts.lastCommend) >= " + config.cooldown + " AND accounts.operational = 1 GROUP BY accounts.username LIMIT " + totalNeeded);
+	let accountsToUse = await db.all("SELECT accounts.username, accounts.password, accounts.sharedSecret FROM accounts LEFT JOIN commended ON commended.username = accounts.username WHERE accounts.username NOT IN (SELECT username FROM commended WHERE commended = " + sid.accountid + " OR commended.username IS NULL) AND (" + Date.now() + " - accounts.lastCommend) >= " + config.cooldown + " AND accounts.operational = 1 GROUP BY accounts.username LIMIT " + totalNeeded);
 	if (accountsToUse.length < totalNeeded) {
-		console.log("red", "Not enough accounts available, got " + accountsToUse.length + "/" + totalNeeded);
+		console.log("red", "Not enough accounts available at the current time, got " + accountsToUse.length + "/" + totalNeeded);
+		await db.close();
 
-		if (targetAcc instanceof Target) {
-			targetAcc.logOff();
+		if (sid instanceof Target) {
+			sid.logOff();
 		}
 
-		await db.close();
+		// Force exit the process if it doesn't happen automatically within 15 seconds
+		setTimeout(process.exit, 15000, 1).unref();
 		return;
 	}
 
 	// Inject what to commend with in our accounts
 	let proxySwitch = 0;
+	for (let i = 0; i < accountsToUse.length; i++) {
+		let chosen = accountsToUse.filter(a => typeof a[config.type.toUpperCase() === "REPORT" ? "report" : "commend"] === "object").length;
 
-	if (config.type.toUpperCase() === "REPORT") {
-		for (let i = 0; i < accountsToUse.length; i++) {
-			let chosen = accountsToUse.filter(a => typeof a.report === "object").length;
+		if (i > 0 && (i % config.proxy.switchProxyEveryXaccounts) === 0 && config.proxy && config.proxy.enabled) {
+			proxySwitch++;
+		}
 
-			if (i > 0 && (i % config.proxy.switchProxyEveryXaccounts) === 0 && config.proxy && config.proxy.enabled) {
-				proxySwitch++;
-			}
+		accountsToUse[i].proxy = proxies[proxySwitch];
 
+		if (config.type.toUpperCase() === "REPORT") {
 			accountsToUse[i].proxy = proxies[proxySwitch];
 			accountsToUse[i].report = {
 				rpt_aimbot: config.report.aimbot > chosen ? true : false,
 				rpt_wallhack: config.report.wallhack > chosen ? true : false,
 				rpt_speedhack: config.report.speedhack > chosen ? true : false,
 				rpt_teamharm: config.report.teamharm > chosen ? true : false,
-				rpt_textabuse: config.report.textabuse > chosen ? true : false,
-				rpt_voiceabuse: config.report.voiceabuse > chosen ? true : false
+				rpt_textabuse: config.report.abusive > chosen ? true : false
 			}
-		}
-	} else {
-		for (let i = 0; i < accountsToUse.length; i++) {
-			let chosen = accountsToUse.filter(a => typeof a.commend === "object").length;
-
-			if (i > 0 && (i % config.proxy.switchProxyEveryXaccounts) === 0 && config.proxy && config.proxy.enabled) {
-				proxySwitch++;
-			}
-
-			accountsToUse[i].proxy = proxies[proxySwitch];
+		} else {
 			accountsToUse[i].commend = {
 				friendly: config.commend.friendly > chosen ? true : false,
 				teaching: config.commend.teaching > chosen ? true : false,
@@ -223,116 +271,27 @@ console.log = (color, ...args) => {
 		}
 	}
 
-	if (config.debug) {
-		console.log(accountsToUse);
-	}
-
 	console.log("white", "Chunking " + accountsToUse.length + " account" + (accountsToUse.length === 1 ? "" : "s") + " into groups of " + config.perChunk + "...");
 	let chunks = helper.chunkArray(accountsToUse, config.perChunk);
 
-	if (config.method.toUpperCase() === "LOGIN") {
-		console.log("white", "Getting an available server");
-
-		serverToUse = (await helper.GetActiveServer()).shift().steamid;
-		console.log("white", "Selected available server " + serverToUse);
-
-		targetAcc.setGamesPlayed(serverToUse);
-	} else if (config.method.toUpperCase() === "SERVER") {
-		console.log("white", "Parsing server input");
-
-		if (config.serverID.toUpperCase() !== "AUTO") {
-			serverToUse = await helper.parseServerID(config.serverID).catch(console.error);
-			if (!serverToUse) {
-				console.log("red", "Could not find online server for " + config.serverID);
-
-				if (targetAcc instanceof Target) {
-					targetAcc.logOff();
-				}
-
-				await db.close();
-				return;
-			}
-
-			console.log("white", "Parsed server input to " + serverToUse);
-		}
-
-		if (config.serverID.toUpperCase() === "AUTO" || config.matchID.toUpperCase() === "AUTO") {
-			matchID = config.matchID.toUpperCase() === "AUTO" ? null : config.matchID;
-			let serverID = config.serverID.toUpperCase() === "AUTO" ? null : config.serverID;
-
-			console.log("blue", "Logging into fetcher account...");
-			let fetcher = new Account(config.fetcher.askSteamGuard);
-			await fetcher.login(config.fetcher.username, config.fetcher.password, config.fetcher.sharedSecret);
-
-			console.log("blue", "Trying to fetch target " + config.fetcher.maxTries + " time" + (config.fetcher.maxTries === 1 ? "" : "s") + " with a delay of " + config.fetcher.tryDelay + "ms");
-
-			let tries = 0;
-			while (!serverToUse) {
-				tries++;
-
-				if (tries > config.fetcher.maxTries) {
-					console.log("red", "Failed to find server after " + tries + " tr" + (tries === 1 ? "y" : "ies"));
-					break;
-				}
-
-				// Community Server
-				serverToUse = await fetcher.getTargetServer(targetAcc).catch((err) => {
-					if (err.message) {
-						console.log("red", err.message);
-					} else {
-						console.error(err);
-					}
-				});
-
-				if (!serverToUse) {
-					// Valve Server
-					serverToUse = await fetcher.getTargetServerValve(targetAcc).catch((err) => {
-						if (err.message) {
-							console.log("red", err.message);
-						} else {
-							console.error(err);
-						}
-					});
-
-					if (!serverToUse) {
-						await new Promise(p => setTimeout(p, config.fetcher.tryDelay));
-					}
-				}
-			}
-
-			if (!serverToUse) {
-				await db.close();
-				return;
-			}
-
-			serverID = serverID === null ? (serverToUse.serverID || "0") : serverID;
-			matchID = matchID === null ? (serverToUse.matchID || "0") : matchID;
-
-			console.log("green", "Found target on " + (serverToUse.isValve ? "Valve" : "Community") + " server " + serverID + " after " + tries + " tr" + (tries === 1 ? "y" : "ies") + " " + (matchID === "0" ? "" : ("(" + matchID + ")")));
-
-			serverToUse = serverID;
-
-			fetcher.logOff();
-		}
-	}
-
-	let info = await helper.getServerInfo(serverToUse).catch((err) => {
-		console.log("red", err.message === "Invalid Server" ? "Server is no longer available" : err);
-	});
-	if (!info) {
-		if (targetAcc instanceof Target) {
-			targetAcc.logOff();
-		}
-
-		await db.close();
-		return;
-	}
-
 	for (let i = 0; i < chunks.length; i++) {
+		// Setup account every chunk just to make sure its all good
+		if (sid instanceof Target) {
+			await sid.setup().then((res) => {
+				console.log("cyan", "Successfully authenticated to anonymous server with ticket " + res);
+			}).catch((err) => {
+				if (err.message === "Failed to unauthorize tickets" || err.message.startsWith("Received authlist for ticket") || err.message === "Failed to send message: Timeout") {
+					console.log("red", err.message);
+				} else {
+					console.error(err);
+				}
+			});
+		}
+
 		console.log("white", "Logging in on chunk " + (i + 1) + "/" + chunks.length);
 
 		// Do commends
-		let result = await handleChunk(chunks[i], (targetAcc instanceof Target ? targetAcc.accountid : targetAcc), serverToUse, matchID);
+		let result = await handleChunk(chunks[i], sid.accountid);
 
 		totalSuccess += result.success.length;
 		totalFail += result.error.length;
@@ -347,18 +306,18 @@ console.log = (color, ...args) => {
 	}
 
 	// We are done here!
-	if (targetAcc instanceof Target) {
-		targetAcc.logOff();
-	}
-
 	await db.close();
 	console.log("magenta", "Finished all chunks with a total of " + totalSuccess + " successful and " + totalFail + " failed " + (config.type.toUpperCase() === "REPORT" ? "report" : "commend") + (totalFail === 1 ? "" : "s"));
+
+	if (sid instanceof Target) {
+		sid.logOff();
+	}
 
 	// Force exit the process if it doesn't happen automatically within 15 seconds
 	setTimeout(process.exit, 15000, 1).unref();
 })();
 
-function handleChunk(chunk, toCommend, serverSteamID, matchID) {
+function handleChunk(chunk, target) {
 	return new Promise(async (resolve, reject) => {
 		let child = ChildProcess.fork("./Bots.js", [], {
 			cwd: path.join(__dirname, "helpers"),
@@ -374,31 +333,13 @@ function handleChunk(chunk, toCommend, serverSteamID, matchID) {
 
 		child.on("message", async (msg) => {
 			if (msg.type === "ready") {
-				if (config.type.toUpperCase() === "COMMEND") {
-					child.send({
-						isCommend: true,
-						isReport: false,
+				child.send({
+					isCommend: config.type.toUpperCase() === "COMMEND",
+					isReport: config.type.toUpperCase() === "REPORT",
 
-						chunk: chunk,
-						toCommend: toCommend,
-						serverSteamID: serverSteamID,
-						matchID: matchID,
-
-						debug: config.debug
-					});
-				} else {
-					child.send({
-						isCommend: false,
-						isReport: true,
-
-						chunk: chunk,
-						toReport: toCommend /* Variable is named "toCommend" but its just the account ID so whatever */,
-						serverSteamID: serverSteamID,
-						matchID: matchID,
-
-						debug: config.debug
-					});
-				}
+					chunk: chunk,
+					target: target
+				});
 				return;
 			}
 
@@ -417,6 +358,17 @@ function handleChunk(chunk, toCommend, serverSteamID, matchID) {
 				return;
 			}
 
+			if (msg.type === "authError") {
+				console.log("red", "[" + msg.username + "] Failed to authenticate to target server");
+				res.error.push(msg.error);
+				return;
+			}
+
+			if (msg.type === "auth") {
+				console.log("magenta", "[" + msg.username + "] Authenticated to anonymous server with ticket " + msg.crc);
+				return;
+			}
+
 			if (msg.type === "commended" || msg.type === "reported") {
 				await db.run("UPDATE accounts SET lastCommend = " + Date.now() + " WHERE username = \"" + msg.username + "\"").catch(() => { });
 
@@ -426,7 +378,7 @@ function handleChunk(chunk, toCommend, serverSteamID, matchID) {
 
 					console.log("red", "[" + msg.username + "] Got response code " + msg.response.response_result + ", already commended target (" + (res.error.length + res.success.length) + "/" + chunk.length + ")");
 
-					await db.run("INSERT INTO commended (username, commended, timestamp) VALUES (\"" + msg.username + "\", " + toCommend + ", " + Date.now() + ")").catch(() => { });
+					await db.run("INSERT INTO commended (username, commended, timestamp) VALUES (\"" + msg.username + "\", " + target + ", " + Date.now() + ")").catch(() => { });
 					return;
 				}
 
@@ -440,7 +392,7 @@ function handleChunk(chunk, toCommend, serverSteamID, matchID) {
 						console.log("green", "[" + msg.username + "] Successfully sent a report with response code " + msg.response.response_result + " - " + msg.confirmation + " (" + (res.error.length + res.success.length) + "/" + chunk.length + ")");
 					}
 
-					await db.run("INSERT INTO commended (username, commended, timestamp) VALUES (\"" + msg.username + "\", " + toCommend + ", " + Date.now() + ")").catch(() => { });
+					await db.run("INSERT INTO commended (username, commended, timestamp) VALUES (\"" + msg.username + "\", " + target + ", " + Date.now() + ")").catch(() => { });
 					return;
 				}
 
@@ -460,6 +412,12 @@ function handleChunk(chunk, toCommend, serverSteamID, matchID) {
 				return;
 			}
 
+			if (msg.type === "halfwayError") {
+				console.log("red", "[" + msg.username + "] Fatal error after logging in and has been marked as invalid (" + (res.error.length + res.success.length) + "/" + chunk.length + ")", msg.error);
+				await db.run("UPDATE accounts SET operational = 0 WHERE \"username\" = \"" + msg.username + "\"");
+				return;
+			}
+
 			if (msg.type === "failLogin") {
 				res.error.push(msg.error);
 
@@ -471,7 +429,8 @@ function handleChunk(chunk, toCommend, serverSteamID, matchID) {
 					SteamUser.EResult.AccountNotFound,
 					SteamUser.EResult.Suspended,
 					SteamUser.EResult.AccountLockedDown,
-					SteamUser.EResult.IPBanned
+					SteamUser.EResult.IPBanned,
+					SteamUser.EResult.AccountDisabled
 				];
 
 				if (typeof msg.error.eresult === "number" && !ignoreCodes.includes(msg.error.eresult)) {
@@ -481,6 +440,9 @@ function handleChunk(chunk, toCommend, serverSteamID, matchID) {
 					await db.run("UPDATE accounts SET operational = 0 WHERE \"username\" = \"" + msg.username + "\"");
 				} else if (msg.error && msg.error.message === "VAC Banned") {
 					console.log("red", "[" + msg.username + "] Has been VAC banned in CSGO and has been marked as invalid (" + (res.error.length + res.success.length) + "/" + chunk.length + ")", msg.error);
+					await db.run("UPDATE accounts SET operational = 0 WHERE \"username\" = \"" + msg.username + "\"");
+				} else if (msg.error && msg.error.message === "Game Banned") {
+					console.log("red", "[" + msg.username + "] Has been Game banned in CSGO and has been marked as invalid (" + (res.error.length + res.success.length) + "/" + chunk.length + ")", msg.error);
 					await db.run("UPDATE accounts SET operational = 0 WHERE \"username\" = \"" + msg.username + "\"");
 				} else {
 					// Add more possible errors which occur if proxies are not working correctly
