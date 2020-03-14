@@ -1,7 +1,11 @@
-# Report Bot v2
-Node Report Bot v2
+# Report Bot v3
+Node Report Bot v3
 
-1) Download and install   [nodejs.org](https://nodejs.org/en/) ,  [notepad++](https://notepad-plus-plus.org/downloads/)
+- **Nothing is cut / Nothing is recoded**
+- Tested by: **scroll**
+- Original script by **BeepIsla**
+
+1) Download and install   [NodeJS v12](https://nodejs.org/en/download/) ,  [notepad++](https://notepad-plus-plus.org/downloads/)
 2) Open `install.bat `  *after loading node modules, the console closes itself*
 3) right click on `config.json`, select edit with notepad ++
 4) put your accounts in the `accounts.txt` file
@@ -10,25 +14,20 @@ Node Report Bot v2
 
 # Bot
 
-*This Report Bot support*  `Server ID`
- *you need to report during the match, it is more effective, as well as more likely to ban the cheater*
+ *reportbot only work when match finished,you  can't reportbot player while they still have ongoing match ,you need to wait till match end,otherwise report will ignored and didnt get any response*
 
 # Config
 
-Put your `Steam API key` inside the `config.json` file and inside this file you should set the target's `Steam Url Profile` and `ServerID` too and save.
+Put your `Steam API key` inside the `config.json` file and inside this file you should set the target's `Steam Url Profile`  and save.
 
-# Server ID
-[Server ID](https://raw.githubusercontent.com/codsec/b1rd_ReportBot_CSGO/master/server%20id.png)
 
 # SteamWebAPIKey
 [SteamWebAPIKey](https://steamcommunity.com/dev/apikey)
 
 ## Accounts: 
 *you can use the generator accounts with the game counter-strike global offensive*
-[Steam-Account-Generator](https://github.com/EarsKilla/Steam-Account-Generator)
+[Steam-Account-Generator](https://accgen.cathook.club/)
 
 ## Help
 *If you have any problems, then please open the* [issue](https://github.com/despa1r1337/ReportBot-v2/issues)
 
-# Credits
-@BeepFelix main script
