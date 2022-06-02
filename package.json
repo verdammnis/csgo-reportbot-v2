@@ -17,7 +17,7 @@
     "@doctormckay/stdlib": "^1.10.2",
     "bytebuffer": "^5.0.1",
     "inquirer": "^7.0.4",
-    "protobufjs": "^6.8.8",
+    "protobufjs": "^6.11.3",
     "request": "^2.88.2",
     "serialize-error": "^5.0.0",
     "sqlite": "^3.0.3",
